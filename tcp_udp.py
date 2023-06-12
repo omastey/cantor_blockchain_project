@@ -24,13 +24,13 @@ def TCP_server(signals, port, host, handle_message):
         sock.listen()
 
         while not signals["shutdown"]:
-            print("waiting ...")
+            # print("waiting ...")
 
             try:
                 clientsocket, address = sock.accept()
             except socket.timeout:
                 continue
-            print("Connection from", address[0])
+            # print("Connection from", address[0])
 
             clientsocket.settimeout(1)
 

@@ -7,8 +7,8 @@ import time
 
 # Define what a Snakecoin block is
 
-users = []
-signals = {"shutdown":False}
+users = {}
+signals = {"shutdown":False, "genesis":False}
 
 class Block:
     def __init__(self, index, timestamp, data, previous_hash):
@@ -31,7 +31,11 @@ class User:
         self.name = name
         self.balance = 0
         self.transactions = []
-        self.blockchain = [create_genesis_block()]
+        if not signals["genesis"]:
+            self.blockchain = [create_genesis_block()]
+            signals["genesis"] = True
+        else:
+            self.blockchain = [] ##get blockchain from others!!!
         self.previous_block = self.blockchain[0]
         miner = threading.Thread(target=self.mine)
         tcp_server_thread = threading.Thread(target=TCP_server, args=(signals, self.port, "localhost", self.handle_msg))
@@ -42,7 +46,7 @@ class User:
     def mine(self):
         """Mining function!"""
         while not signals["shutdown"]:
-            print("mining coins...")
+            # print("mining coins...")
             last_block = self.blockchain[len(self.blockchain) - 1]
             last_proof = last_block.data['proof-of-work']
             # Find the proof of work for
@@ -86,14 +90,6 @@ class User:
             self.blockchain.append(mined_block)
             self.balance += 1
             
-            print("NEW BLOCK:")
-            print(
-                "   index: ", mined_block.index, '\n',
-                "   timestamp: ", mined_block.timestamp, '\n',
-                "   transaction_info: ", mined_block.data, '\n',
-                "   hash: ", mined_block.hash, '\n'
-                )
-            print(self.name, "'s BALANCE: ", self.balance)
             # Let the client know we mined a block
             msg = json.dumps({
                 "msg_type": "new_mined_block",
@@ -103,9 +99,9 @@ class User:
                 "hash": last_block_hash
             })
 
-            time.sleep(10)
-        
+            time.sleep(30)
             # for user in users:
+            #     if user != self:
             #     TCP_client(msg, user, "localhost")
         
 
@@ -120,6 +116,66 @@ class User:
             )
             self.blockchain.append(new_block)
 
+
+def print_chain(user):
+        """status on user chain"""
+        print(user.name, "'s blockchain:")
+        for mined_block in user.blockchain:
+            print(
+                "   index: ", mined_block.index, '\n',
+                "   timestamp: ", mined_block.timestamp, '\n',
+                "   transaction_info: ", mined_block.data, '\n',
+                "   hash: ", mined_block.hash, '\n'
+                )
+        print(user.name, "'s BALANCE: ", user.balance)
+        print('\n','\n')
+
+def transaction(buyer, seller, amount):
+    last_block = buyer.blockchain[len(buyer.blockchain) - 1]
+    last_proof = last_block.data['proof-of-work']
+
+    proof = proof_of_work(last_proof)
+
+    transaction = (
+        { "from": seller.port, "to": buyer.port, "amount": amount }
+    )
+    # Now we can gather the data needed
+    # to create the new block
+    new_block_data = {
+        "proof-of-work": proof,
+        "transaction": transaction
+    }
+    new_block_index = last_block.index + 1
+    new_block_timestamp = date.datetime.now()
+    last_block_hash = last_block.hash
+    # Empty transaction list
+    # Now create the
+    # new block!
+    mined_block = Block(
+        new_block_index,
+        new_block_timestamp,
+        new_block_data,
+        last_block_hash
+    )
+
+
+    buyer.blockchain.append(mined_block)
+    buyer.balance += amount
+
+    print(seller, "sold", buyer, amount, "coins")
+    
+    # Let the client know we mined a block
+    msg = json.dumps({
+        "msg_type": "new_mined_block",
+        "index": new_block_index,
+        "timestamp": str(new_block_timestamp),
+        "data": new_block_data,
+        "hash": last_block_hash
+    })
+
+    # for user in users:
+    #     if user != self:
+    #     TCP_client(msg, user, "localhost")
 
 
 # Generate genesis block
@@ -157,28 +213,39 @@ def proof_of_work(last_proof):
 
 
 def main():
-    """Main setion"""
-    # Create the blockchain and add the genesis block
     curport = 6000
+    while not signals["shutdown"]:
+        """Main setion"""
+        # Create the blockchain and add the genesis block
+        
+        print('\n', '\n')
+        print("Menu")
+        print(" 1. Create New User")
+        print(" 2. Make Transaction")
+        print(" 3. Check Users Status")
 
-    print("Menu")
-    print(" 1. Create New User")
-    print(" 2. Make Transaction")
-    print(" 3. Check Users Status")
+        user_input = input("Enter your choice (1, 2, or 3): ")
 
-    user_input = input("Enter your choice (1, 2, or 3): ")
+        if user_input == "1":
+            name_input = input("What's this user's name? ")
+            users[name_input] = User(curport, "localhost", name_input)
+            curport += 1
+        elif user_input == "2":
+            buyer = input("Enter buyer's name: ")
+            seller = input("Enter seller's name: ")
+            amount = float(input("Enter amount of coins transferred: "))
 
-    if user_input == "1":
-        name_input = input("What's this user's name? ")
-        users.append(
-            User(curport, "localhost", name_input)
-        )
-    elif user_input == "2":
-        make_transaction()
-    elif user_input == "3":
-        check_user_status()
-    else:
-        print("Invalid choice! Please enter a valid option (1, 2, or 3).")
+            if amount > users[seller].balance:
+                print("ERROR:", users[seller], "does not have enough funds for this transaction")
+            else:
+                transaction(users[buyer], users[seller], amount)
+
+        elif user_input == "3":
+            for user in users.values():
+                print_chain(user)
+        else:
+            print("Invalid choice! Please enter a valid option (1, 2, or 3).")
+        time.sleep(1)
 
 
 
