@@ -5,7 +5,8 @@ import threading
 import json
 import time
 
-# Define what a Snakecoin block is
+# NEW GOAL! ANY TIME THERE IS A TRANSACTION IT WILL BE SENT TO MANAGER, 
+#   MANAGER WILL HAVE QUEUE OF TRANSACTIONS AND SEND ONE AT A TIME SO EVERYONE HAS SAME CHAIN
 
 users = {}
 signals = {"shutdown":False, "genesis":False}
@@ -31,11 +32,12 @@ class User:
         self.name = name
         self.balance = 0
         self.transactions = []
-        if not signals["genesis"]:
-            self.blockchain = [create_genesis_block()]
-            signals["genesis"] = True
-        else:
-            self.blockchain = [] ##get blockchain from others!!!
+        self.blockchain = [create_genesis_block()]
+        # if not signals["genesis"]:
+        #     self.blockchain = [create_genesis_block()]
+        #     signals["genesis"] = True
+        # else:
+        #     self.blockchain = [] ##get blockchain from others!!!
         self.previous_block = self.blockchain[0]
         miner = threading.Thread(target=self.mine)
         tcp_server_thread = threading.Thread(target=TCP_server, args=(signals, self.port, "localhost", self.handle_msg))
