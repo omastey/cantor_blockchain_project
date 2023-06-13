@@ -4,12 +4,24 @@ from tcp_udp import TCP_client, TCP_server, UDP_client, UDP_server
 import threading
 import json
 import time
+from datetime import datetime
 
 # NEW GOAL! ANY TIME THERE IS A TRANSACTION IT WILL BE SENT TO MANAGER, 
 #   MANAGER WILL HAVE QUEUE OF TRANSACTIONS AND SEND ONE AT A TIME SO EVERYONE HAS SAME CHAIN
 
 users = {}
 signals = {"shutdown":False, "genesis":False}
+transaction_queue = []
+
+
+# def date_sort(date1, date2):
+#     if date1.time() < date2.time():
+#         return -1
+#     elif date1.time() > date2.time():
+#         return 1
+#     else:
+#         return 0
+
 
 class Block:
     def __init__(self, index, timestamp, data, previous_hash):
@@ -30,7 +42,7 @@ class User:
         self.port = port
         self.host = host ## always localhost here!!
         self.name = name
-        self.balance = 0
+        self.balance = 0.0
         self.transactions = []
         self.blockchain = [create_genesis_block()]
         # if not signals["genesis"]:
@@ -82,41 +94,48 @@ class User:
                 last_block_hash
             )
 
-            #  block_to_add = next_block(previous_block)
-        #     blockchain.append(block_to_add)
-        #     previous_block = block_to_add
-        #     # Tell everyone about it!
-        #     print ("Block #{} has been added to the blockchain!".format(block_to_add.index))
-        #     print ("Hash: {}\n".format(block_to_add.hash) )
-
             self.blockchain.append(mined_block)
-            self.balance += 1
+            self.blockchain = sorted(self.blockchain, key=lambda x: x.timestamp)  
+            # self.blockchain.sort(key=lambda dt: dt, cmp=date_sort)
+            self.balance += 1.0
             
             # Let the client know we mined a block
             msg = json.dumps({
-                "msg_type": "new_mined_block",
-                "index": new_block_index,
-                "timestamp": str(new_block_timestamp),
-                "data": new_block_data,
-                "hash": last_block_hash
+                "index": mined_block.index,
+                "timestamp": str(mined_block.timestamp),
+                "data": mined_block.data,
+                "hash": mined_block.hash
             })
-
+            users_copy = users.copy()
+            for user in users_copy.values():
+                if user != self:
+                    TCP_client(msg, user.port, "localhost")
             time.sleep(30)
-            # for user in users:
-            #     if user != self:
-            #     TCP_client(msg, user, "localhost")
+            
         
 
     def handle_msg(self, msg):
         """handling messages"""
-        if(msg["msg_type"] == "new_mined_block"):
-            new_block = Block(
-                msg["index"],
-                msg["timestamp"],
-                msg["data"],
-                msg["hash"]
-            )
-            self.blockchain.append(new_block)
+        new_block = Block(
+            msg["index"],
+            datetime.strptime(msg["timestamp"], "%Y-%m-%d %H:%M:%S.%f"),
+            msg["data"],
+            msg["hash"]
+        )
+        self.blockchain.append(new_block)
+        self.blockchain = sorted(self.blockchain, key=lambda x: x.timestamp)
+
+        # msg = json.dumps({
+        #     "index": new_block.index,
+        #     "timestamp": str(new_block.timestamp),
+        #     "data": new_block.data,
+        #     "hash": new_block.hash
+        # })
+
+        # for user in users:
+        #     if user != self:
+        #         TCP_client(msg, user.port, "localhost")
+
 
 
 def print_chain(user):
@@ -162,22 +181,22 @@ def transaction(buyer, seller, amount):
 
 
     buyer.blockchain.append(mined_block)
+    buyer.blockchain = sorted(buyer.blockchain, key=lambda x: x.timestamp)
     buyer.balance += amount
 
     print(seller, "sold", buyer, amount, "coins")
     
     # Let the client know we mined a block
     msg = json.dumps({
-        "msg_type": "new_mined_block",
-        "index": new_block_index,
-        "timestamp": str(new_block_timestamp),
-        "data": new_block_data,
-        "hash": last_block_hash
+        "index": mined_block.index,
+        "timestamp": str(mined_block.timestamp),
+        "data": mined_block.data,
+        "hash": mined_block.hash
     })
 
-    # for user in users:
-    #     if user != self:
-    #     TCP_client(msg, user, "localhost")
+    for user in users.values():
+        if user != buyer:
+            TCP_client(msg, user.port, "localhost")
 
 
 # Generate genesis block
@@ -187,12 +206,12 @@ def create_genesis_block():
     return Block(0, date.datetime.now(), {'proof-of-work':2}, "0")
 
 # Generate all later blocks in the blockchain
-def next_block(last_block):
-    this_index = last_block.index + 1
-    this_timestamp = date.datetime.now()
-    this_data = "Hey! I'm block " + str(this_index)
-    this_hash = last_block.hash
-    return Block(this_index, this_timestamp, this_data, this_hash)
+# def next_block(last_block):
+#     this_index = last_block.index + 1
+#     this_timestamp = date.datetime.now()
+#     this_data = "Hey! I'm block " + str(this_index)
+#     this_hash = last_block.hash
+#     return Block(this_index, this_timestamp, this_data, this_hash)
 
 
 
@@ -210,6 +229,39 @@ def proof_of_work(last_proof):
     # we can return it as a proof
     # of our work
     return incrementor
+
+
+def network():
+    while not signals["shutdown"]:
+        if len(transaction_queue) != 0:
+            transaction = transaction_queue.pop(0)
+            
+            last_block = buyer.blockchain[len(buyer.blockchain) - 1]
+            last_proof = last_block.data['proof-of-work']
+
+            proof = proof_of_work(last_proof)
+
+            transaction = (
+                { "from": seller.port, "to": buyer.port, "amount": amount }
+            )
+            # Now we can gather the data needed
+            # to create the new block
+            new_block_data = {
+                "proof-of-work": proof,
+                "transaction": transaction
+            }
+            new_block_index = last_block.index + 1
+            new_block_timestamp = date.datetime.now()
+            last_block_hash = last_block.hash
+            # Empty transaction list
+            # Now create the
+            # new block!
+            mined_block = Block(
+                new_block_index,
+                new_block_timestamp,
+                new_block_data,
+                last_block_hash
+            )
 
 
 
