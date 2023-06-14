@@ -45,11 +45,12 @@ def TCP_server(signals, port, host, handle_message):
 
             try:
                 message_dict = json.loads(message_str)
+                handle_message(message_dict)
                 # handle_message(message_dict, signals)
             except json.JSONDecodeError:
                 continue
-            print(message_dict)
-            handle_message(message_dict)
+            # print(message_dict)
+            
 
     print("TCP_server() shutting down")
 
